@@ -5,10 +5,32 @@ sqlalchemy==2.0.23
 pymysql==1.1.0
 cryptography==41.0.7
 pydantic==2.5.0
+pydantic-settings==2.1.0  # 追加: 設定管理用
 python-multipart==0.0.6
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 alembic==1.13.0
+
+# Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
+pytest-cov==4.1.0  # 追加: カバレッジ測定
+pytest-html==4.1.1  # 追加: HTMLレポート
+pytest-xdist==3.5.0  # 追加: 並列テスト実行
 httpx==0.25.2
+requests==2.31.0  # 追加: テストでのHTTPリクエスト用
+
+# Development & Debugging
+python-dotenv==1.0.0
+
+# Database utilities
+psycopg2-binary==2.9.9  # PostgreSQL support (optional)
+
+# Logging & Monitoring
+structlog==23.2.0
+
+# Date & Time utilities
+python-dateutil==2.8.2
+
+# Additional utilities for logging service
+typing-extensions==4.8.0

@@ -111,6 +111,13 @@ class SimulationRun(Base):
     completed_at = Column(TIMESTAMP, nullable=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
 
+    # 新規追加: バージョン情報
+    version = Column(String(20), nullable=True)
+    parameter_config = Column(String(1000), nullable=True)  # JSONとして使用
+
+    # リレーション (logging.py側で参照される)
+    game_details = relationship("GameDetail", back_populates="simulation_run")
+
 
 class StrategyStats(Base):
     __tablename__ = "strategy_stats"
@@ -123,3 +130,6 @@ class StrategyStats(Base):
     usage_count = Column(Integer, default=0)
     success_count = Column(Integer, default=0)
     hit_count = Column(Integer, default=0)
+
+    # 新規追加: バージョン情報
+    version = Column(String(20), default="1.0.0")

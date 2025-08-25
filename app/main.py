@@ -6,24 +6,51 @@ from typing import Optional
 
 from .database import get_db, engine
 from .models import game as game_models
+from .models import logging as logging_models  # 追加
 from .schemas import game as game_schemas
 from .services.game_engine import GameEngine
+from .services.logging_service import ParameterManager, GameLogger  # 追加
+from .routers.logging import router as logging_router  # 修正
 
-# テーブル作成
+# テーブル作成（同じBaseを使用）
 game_models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Baseball Game API", version="1.0.0")
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    openapi_schema["openapi"] = "3.0.3"  # ← 強制的にバージョンを書き換える
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 # CORS設定
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:8501",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# サービス初期化
 game_engine = GameEngine()
+param_manager = ParameterManager()
+game_logger = GameLogger(param_manager)
+
+# ログAPIルーターを追加
+app.include_router(logging_router)
 
 
 @app.get("/")
@@ -193,7 +220,32 @@ def toggle_pitching(game_id: str, db: Session = Depends(get_db)):
     }
 
 
-# 統計API（シミュレーター用）
+# 新規追加: ゲーム終了エンドポイント
+@app.post("/api/game/{game_id}/end")
+def end_game(game_id: str, db: Session = Depends(get_db)):
+    """ゲーム終了（ログに記録）"""
+    db_game = db.query(game_models.Game).filter(game_models.Game.id == game_id).first()
+    if not db_game:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    # ゲーム完了をログに記録
+    try:
+        game_detail = game_logger.log_game_completion(
+            db=db, game=db_game, game_type=logging_models.GameTypeEnum.player_vs_cpu
+        )
+
+        return {
+            "status": "game_ended",
+            "final_score": {"player": db_game.player_score, "cpu": db_game.cpu_score},
+            "winner": game_detail.winner.value,
+            "version": game_detail.version,
+            "game_detail_id": game_detail.id,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to log game: {str(e)}")
+
+
+# 統計API（既存）
 @app.get("/api/stats/pitch-effectiveness")
 def get_pitch_effectiveness(db: Session = Depends(get_db)):
     """球種別効果統計"""
