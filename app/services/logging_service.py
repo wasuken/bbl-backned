@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from ..models.game import Game, Pitch, SimulationRun  # SimulationRun追加
+from ..models.game import Game, Pitch, SimulationRun
 from ..models.logging import (
     ParameterVersion,
     GameDetail,
@@ -52,6 +52,10 @@ class ParameterManager:
         if param_version:
             return param_version.parameters
         else:
+            # 明示的にバージョンが指定された場合はNoneを返す
+            if version != self.get_current_version(db):
+                return None
+            # 現在のバージョン取得時のフォールバックとしてデフォルトを返す
             return self.get_default_parameters()
 
     def create_default_version(self, db: Session) -> str:
@@ -232,7 +236,7 @@ class GameLogger:
     def _update_player_statistics(
         self, db: Session, version: str, game_detail: GameDetail, pitches: list
     ):
-        """プレイヤー統計を更新"""
+        """プレイヤー統計を更新（None値対応版）"""
         today = date.today()
 
         # プレイヤーとCPU両方の統計を更新
@@ -249,52 +253,66 @@ class GameLogger:
             )
 
             if not stats:
-                # 新規作成
+                # 新規作成（デフォルト値を明示的に設定）
                 stats = PlayerStatistics(
                     version=version,
                     player_type=player_type,
                     date_from=today,
                     date_to=today,
+                    games_played=0,
+                    at_bats=0,
+                    hits=0,
+                    batting_avg=0.000,
+                    innings_pitched=0.0,
+                    earned_runs=0,
+                    era=0.00,
+                    strikeouts=0,
+                    walks=0,
+                    wins=0,
+                    losses=0,
+                    win_rate=0.000,
                 )
                 db.add(stats)
 
-            # 統計を更新
-            stats.games_played += 1
+            # None値チェックして安全に更新
+            stats.games_played = (stats.games_played or 0) + 1
 
             if player_type == PlayerTypeEnum.human:
                 # プレイヤーの統計
                 player_pitches = [p for p in pitches if not p.is_pitcher_player]
                 player_hits = len([p for p in player_pitches if p.result_type == "hit"])
 
-                stats.at_bats += len(player_pitches)
-                stats.hits += player_hits
+                stats.at_bats = (stats.at_bats or 0) + len(player_pitches)
+                stats.hits = (stats.hits or 0) + player_hits
                 stats.batting_avg = (
                     stats.hits / stats.at_bats if stats.at_bats > 0 else 0.000
                 )
 
                 if game_detail.winner == WinnerEnum.player:
-                    stats.wins += 1
+                    stats.wins = (stats.wins or 0) + 1
                 elif game_detail.winner == WinnerEnum.cpu:
-                    stats.losses += 1
+                    stats.losses = (stats.losses or 0) + 1
             else:
                 # CPUの統計
                 cpu_pitches = [p for p in pitches if p.is_pitcher_player]
                 cpu_hits = len([p for p in cpu_pitches if p.result_type == "hit"])
 
-                stats.at_bats += len(cpu_pitches)
-                stats.hits += cpu_hits
+                stats.at_bats = (stats.at_bats or 0) + len(cpu_pitches)
+                stats.hits = (stats.hits or 0) + cpu_hits
                 stats.batting_avg = (
                     stats.hits / stats.at_bats if stats.at_bats > 0 else 0.000
                 )
 
                 if game_detail.winner == WinnerEnum.cpu:
-                    stats.wins += 1
+                    stats.wins = (stats.wins or 0) + 1
                 elif game_detail.winner == WinnerEnum.player:
-                    stats.losses += 1
+                    stats.losses = (stats.losses or 0) + 1
 
-            # 勝率計算
-            total_games = stats.wins + stats.losses
-            stats.win_rate = stats.wins / total_games if total_games > 0 else 0.000
+            # 勝率計算（None値対応）
+            total_wins = stats.wins or 0
+            total_losses = stats.losses or 0
+            total_games = total_wins + total_losses
+            stats.win_rate = total_wins / total_games if total_games > 0 else 0.000
 
             # 日付範囲を更新
             if today > stats.date_to:
@@ -320,15 +338,19 @@ class StatisticsService:
                 .all()
             )
 
-            version_stats = {
-                "games_played": sum(s.games_played for s in stats),
-                "avg_batting_avg": sum(s.batting_avg for s in stats) / len(stats)
-                if stats
-                else 0,
-                "avg_win_rate": sum(s.win_rate for s in stats) / len(stats)
-                if stats
-                else 0,
-            }
+            if stats:
+                version_stats = {
+                    "games_played": sum((s.games_played or 0) for s in stats),
+                    "avg_batting_avg": sum((s.batting_avg or 0) for s in stats)
+                    / len(stats),
+                    "avg_win_rate": sum((s.win_rate or 0) for s in stats) / len(stats),
+                }
+            else:
+                version_stats = {
+                    "games_played": 0,
+                    "avg_batting_avg": 0.000,
+                    "avg_win_rate": 0.000,
+                }
 
             comparison[version] = version_stats
 

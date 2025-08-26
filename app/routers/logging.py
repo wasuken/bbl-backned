@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func  # 追加
 from typing import List, Optional, Dict, Any
@@ -17,7 +17,7 @@ from ..models.logging import (
 )
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/logging", tags=["logging"])
+router = APIRouter(prefix="/logging", tags=["logging"])
 
 # 依存性注入用のサービス
 param_manager = ParameterManager()
@@ -64,6 +64,10 @@ class StatisticsResponse(BaseModel):
     win_rate: float
     date_from: date
     date_to: date
+
+
+class VersionComparisonRequest(BaseModel):
+    versions: List[str]
 
 
 # パラメータ管理エンドポイント
@@ -217,11 +221,13 @@ def get_game_detail(game_id: str, db: Session = Depends(get_db)):
     )
 
 
-# 統計エンドポイント
-@router.get("/statistics/versions/comparison")
-def get_version_comparison(versions: List[str], db: Session = Depends(get_db)):
+# # 統計エンドポイント
+@router.post("/statistics/versions/comparison")
+def get_version_comparison(
+    request: VersionComparisonRequest, db: Session = Depends(get_db)
+):
     """バージョン間比較統計"""
-    return stats_service.get_version_comparison(db, versions)
+    return stats_service.get_version_comparison(db, request.versions)
 
 
 @router.get("/statistics/{version}/players", response_model=List[StatisticsResponse])

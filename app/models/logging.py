@@ -99,7 +99,6 @@ class GameDetail(Base):
 
     # リレーション
     parameter_version = relationship("ParameterVersion", back_populates="game_details")
-    # 既存のGameモデルは同じBaseなので問題なし
     simulation_run = relationship("SimulationRun", back_populates="game_details")
 
 
@@ -116,23 +115,23 @@ class PlayerStatistics(Base):
     date_from = Column(Date, nullable=False)
     date_to = Column(Date, nullable=False)
 
-    # 打撃成績
-    games_played = Column(Integer, default=0)
-    at_bats = Column(Integer, default=0)
-    hits = Column(Integer, default=0)
-    batting_avg = Column(DECIMAL(4, 3), default=0.000)
+    # 打撃成績 - デフォルト値を明示的に設定
+    games_played = Column(Integer, nullable=False, default=0)
+    at_bats = Column(Integer, nullable=False, default=0)
+    hits = Column(Integer, nullable=False, default=0)
+    batting_avg = Column(DECIMAL(4, 3), nullable=False, default=0.000)
 
-    # 投球成績
-    innings_pitched = Column(DECIMAL(4, 1), default=0.0)
-    earned_runs = Column(Integer, default=0)
-    era = Column(DECIMAL(4, 2), default=0.00)
-    strikeouts = Column(Integer, default=0)
-    walks = Column(Integer, default=0)
+    # 投球成績 - デフォルト値を明示的に設定
+    innings_pitched = Column(DECIMAL(4, 1), nullable=False, default=0.0)
+    earned_runs = Column(Integer, nullable=False, default=0)
+    era = Column(DECIMAL(4, 2), nullable=False, default=0.00)
+    strikeouts = Column(Integer, nullable=False, default=0)
+    walks = Column(Integer, nullable=False, default=0)
 
-    # 勝敗
-    wins = Column(Integer, default=0)
-    losses = Column(Integer, default=0)
-    win_rate = Column(DECIMAL(4, 3), default=0.000)
+    # 勝敗 - デフォルト値を明示的に設定
+    wins = Column(Integer, nullable=False, default=0)
+    losses = Column(Integer, nullable=False, default=0)
+    win_rate = Column(DECIMAL(4, 3), nullable=False, default=0.000)
 
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 

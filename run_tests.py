@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Baseball Game API テスト実行スクリプト
-E2Eテストの実行とレポート生成
+Baseball Game API テスト実行スクリプト（コンテナ内実行版）
 """
 
 import os
@@ -11,203 +10,163 @@ import time
 from pathlib import Path
 
 
-def check_docker_services():
-    """Dockerサービス確認"""
-    print("🔍 Checking Docker services...")
-
-    try:
-        result = subprocess.run(
-            ["docker-compose", "ps", "--services", "--filter", "status=running"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-        running_services = result.stdout.strip().split("\n")
-        required_services = ["mysql", "baseball_backend"]
-
-        for service in required_services:
-            if service not in running_services:
-                print(f"❌ {service} is not running")
-                return False
-
-        print("✅ All required services are running")
-        return True
-
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Error checking Docker services: {e}")
-        return False
-
-
-def wait_for_services():
-    """サービス起動待機"""
-    print("⏳ Waiting for services to be ready...")
-
-    import requests
-    import time
+def wait_for_mysql():
+    """MySQL接続待機（コンテナ内から）"""
+    print("⏳ Waiting for MySQL to be ready...")
 
     max_retries = 30
-    retry_count = 0
-
-    while retry_count < max_retries:
+    for i in range(max_retries):
         try:
-            response = requests.get("http://localhost:8000/", timeout=5)
-            if response.status_code == 200:
-                print("✅ API service is ready")
-                return True
-        except requests.exceptions.RequestException:
-            pass
+            # コンテナ内からmysqlコンテナに接続テスト
+            import pymysql
 
-        retry_count += 1
+            conn = pymysql.connect(
+                host="mysql",  # Docker Compose サービス名
+                port=3306,
+                user="baseball_user",
+                password="baseball_pass",
+                database="baseball_game",
+                connect_timeout=5,
+            )
+            conn.ping()
+            conn.close()
+            print("✅ MySQL is ready")
+            return True
+
+        except Exception as e:
+            if i == max_retries - 1:
+                print(f"❌ MySQL connection failed: {e}")
+                return False
+
+        print(f"⏳ MySQL not ready, retrying... ({i + 1}/{max_retries})")
         time.sleep(2)
-        print(f"⏳ Retrying... ({retry_count}/{max_retries})")
 
-    print("❌ Services did not become ready in time")
     return False
 
 
-def run_tests(test_path="tests/", verbose=False, coverage=False):
+def run_tests(test_pattern="tests/", verbose=False, coverage=False, stop_on_fail=True):
     """テスト実行"""
-    print(f"🚀 Running tests from {test_path}")
+    print(f"🚀 Running tests: {test_pattern}")
+
+    # 環境変数設定
+    env = os.environ.copy()
+    env["ENVIRONMENT"] = "testing"
+    env["PYTHONPATH"] = "/app"
 
     # pytestコマンド構築
     cmd = ["python", "-m", "pytest"]
 
     if verbose:
         cmd.append("-v")
+    else:
+        cmd.append("-q")
 
     if coverage:
         cmd.extend(
-            ["--cov=app", "--cov-report=html:htmlcov", "--cov-report=term-missing"]
+            ["--cov=app", "--cov-report=term-missing", "--cov-report=html:htmlcov"]
         )
 
-    # テスト出力の改善
-    cmd.extend(["--tb=short", "--strict-markers", "--disable-warnings"])
+    # テスト実行オプション
+    cmd.extend(
+        [
+            "--tb=short",
+            "--disable-warnings",
+            "--strict-markers",
+        ]
+    )
 
-    cmd.append(test_path)
+    if stop_on_fail:
+        cmd.append("--maxfail=3")
 
-    print(f"📋 Running command: {' '.join(cmd)}")
+    cmd.append(test_pattern)
+
+    print(f"📋 Command: {' '.join(cmd)}")
 
     try:
-        result = subprocess.run(cmd, check=False)
+        result = subprocess.run(cmd, env=env, check=False)
         return result.returncode == 0
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Test execution failed: {e}")
+    except KeyboardInterrupt:
+        print("\n⏹️  Tests interrupted by user")
+        return False
+    except Exception as e:
+        print(f"❌ Test execution error: {e}")
         return False
 
 
-def generate_test_report():
-    """テストレポート生成"""
-    print("📊 Generating test report...")
+def run_specific_test_class(class_name):
+    """特定のテストクラスのみ実行"""
+    print(f"🎯 Running specific test class: {class_name}")
 
-    # JUnitレポート付きでテスト再実行
-    cmd = [
-        "python",
-        "-m",
-        "pytest",
-        "--junitxml=test-results.xml",
-        "--cov=app",
-        "--cov-report=xml",
-        "--cov-report=html:htmlcov",
-        "tests/",
-    ]
+    if "Game" in class_name:
+        test_file = "tests/test_game_api.py"
+    elif "Logging" in class_name:
+        test_file = "tests/test_logging_api.py"
+    else:
+        test_file = "tests/"
 
-    try:
-        subprocess.run(cmd, check=True)
-        print("✅ Test report generated:")
-        print("  - JUnit XML: test-results.xml")
-        print("  - Coverage HTML: htmlcov/index.html")
-        print("  - Coverage XML: coverage.xml")
-        return True
-    except subprocess.CalledProcessError:
-        print("❌ Failed to generate test report")
-        return False
-
-
-def cleanup_test_environment():
-    """テスト環境クリーンアップ"""
-    print("🧹 Cleaning up test environment...")
-
-    # テスト用一時ファイル削除
-    temp_files = ["test-results.xml", "coverage.xml", ".coverage"]
-
-    for file in temp_files:
-        if os.path.exists(file):
-            os.remove(file)
-            print(f"  Removed {file}")
-
-    # テスト用DBクリーンアップは conftest.py で自動実行
-    print("✅ Cleanup completed")
+    pattern = f"{test_file}::{class_name}"
+    return run_tests(pattern, verbose=True, stop_on_fail=False)
 
 
 def main():
     """メイン実行"""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Run Baseball Game API E2E tests")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
-    parser.add_argument(
-        "--coverage", "-c", action="store_true", help="Generate coverage report"
+    parser = argparse.ArgumentParser(
+        description="Run Baseball Game API Tests (Container Version)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python run_tests.py                     # 全テスト実行
+  python run_tests.py -v                  # 詳細出力
+  python run_tests.py -c                  # カバレッジ付き
+  python run_tests.py --class TestGameAPI # 特定クラスのみ
+        """,
     )
+
+    parser.add_argument("--verbose", "-v", action="store_true", help="詳細出力")
     parser.add_argument(
-        "--report", "-r", action="store_true", help="Generate full test report"
+        "--coverage", "-c", action="store_true", help="カバレッジレポート生成"
     )
+    parser.add_argument("--class", dest="test_class", help="特定のテストクラスのみ実行")
+    parser.add_argument("--pattern", default="tests/", help="テストファイルパターン")
     parser.add_argument(
-        "--skip-service-check", action="store_true", help="Skip Docker service check"
+        "--no-mysql-check", action="store_true", help="MySQL接続チェックをスキップ"
     )
-    parser.add_argument("--test-path", default="tests/", help="Path to test files")
-    parser.add_argument("--cleanup", action="store_true", help="Only run cleanup")
 
     args = parser.parse_args()
-
-    if args.cleanup:
-        cleanup_test_environment()
-        return
 
     success = True
 
     try:
-        # Docker サービス確認
-        # if not args.skip_service_check:
-        #     if not check_docker_services():
-        #         print("💡 Try running: docker-compose up -d")
-        #         sys.exit(1)
-
-        #     if not wait_for_services():
-        #         print("💡 Check if services are running properly")
-        #         sys.exit(1)
+        # MySQL接続確認
+        if not args.no_mysql_check:
+            if not wait_for_mysql():
+                print("❌ MySQL is not ready")
+                sys.exit(1)
 
         # テスト実行
-        if args.report:
-            success = generate_test_report()
+        if args.test_class:
+            success = run_specific_test_class(args.test_class)
         else:
             success = run_tests(
-                test_path=args.test_path, verbose=args.verbose, coverage=args.coverage
+                test_pattern=args.pattern, verbose=args.verbose, coverage=args.coverage
             )
 
+        # 結果表示
         if success:
             print("\n🎉 All tests passed!")
-            print("\n📈 Next steps:")
-            print("  - Check test coverage: open htmlcov/index.html")
-            print("  - Review test results: test-results.xml")
-            print("  - Add more test cases as needed")
+            if args.coverage:
+                print("📊 Coverage report: htmlcov/index.html")
         else:
             print("\n❌ Some tests failed!")
-            print("\n🔧 Debug suggestions:")
-            print("  - Check service logs: docker-compose logs")
-            print("  - Verify database connection")
-            print(
-                "  - Run tests individually: pytest tests/test_game_api.py::TestGameAPI::test_root_endpoint -v"
-            )
 
     except KeyboardInterrupt:
-        print("\n\n⏹️  Tests interrupted by user")
+        print("\n⏹️  Interrupted by user")
         success = False
 
-    finally:
-        if not success:
-            sys.exit(1)
+    sys.exit(0 if success else 1)
 
 
-pif __name__ == "__main__":
+if __name__ == "__main__":
     main()

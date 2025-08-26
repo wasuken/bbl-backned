@@ -6,30 +6,18 @@ from typing import Optional
 
 from .database import get_db, engine
 from .models import game as game_models
-from .models import logging as logging_models  # 追加
+from .models import logging as logging_models
 from .schemas import game as game_schemas
 from .services.game_engine import GameEngine
-from .services.logging_service import ParameterManager, GameLogger  # 追加
-from .routers.logging import router as logging_router  # 修正
+from .services.logging_service import ParameterManager, GameLogger
+from .routers.logging import router as logging_router
 
 # テーブル作成（同じBaseを使用）
 game_models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Baseball Game API", version="1.0.0")
-def custom_openapi():
-    if app.openapi_schema:
-        return app.openapi_schema
-    openapi_schema = get_openapi(
-        title=app.title,
-        version=app.version,
-        description=app.description,
-        routes=app.routes,
-    )
-    openapi_schema["openapi"] = "3.0.3"  # ← 強制的にバージョンを書き換える
-    app.openapi_schema = openapi_schema
-    return app.openapi_schema
 
-app.openapi = custom_openapi
+# カスタムOpenAPI関数を削除して、デフォルトを使用
 
 # CORS設定
 app.add_middleware(
@@ -58,7 +46,7 @@ def read_root():
     return {"message": "Baseball Game API", "status": "running"}
 
 
-@app.post("/api/game/start", response_model=game_schemas.GameStateResponse)
+@app.post("/game/start", response_model=game_schemas.GameStateResponse)
 def start_game(request: game_schemas.StartGameRequest, db: Session = Depends(get_db)):
     """新しいゲームを開始"""
     game_id = str(uuid.uuid4())
@@ -80,7 +68,7 @@ def start_game(request: game_schemas.StartGameRequest, db: Session = Depends(get
     )
 
 
-@app.get("/api/game/{game_id}/state", response_model=game_schemas.GameStateResponse)
+@app.get("/game/{game_id}/state", response_model=game_schemas.GameStateResponse)
 def get_game_state(game_id: str, db: Session = Depends(get_db)):
     """ゲーム状態を取得"""
     db_game = db.query(game_models.Game).filter(game_models.Game.id == game_id).first()
@@ -99,7 +87,7 @@ def get_game_state(game_id: str, db: Session = Depends(get_db)):
     )
 
 
-@app.post("/api/game/{game_id}/pitch", response_model=game_schemas.PitchResultResponse)
+@app.post("/game/{game_id}/pitch", response_model=game_schemas.PitchResultResponse)
 def execute_pitch(
     game_id: str, request: game_schemas.PitchRequest, db: Session = Depends(get_db)
 ):
@@ -188,7 +176,7 @@ def execute_pitch(
     )
 
 
-@app.post("/api/game/{game_id}/next-pitch")
+@app.post("/game/{game_id}/next-pitch")
 def next_pitch(game_id: str, db: Session = Depends(get_db)):
     """次の投球に進む"""
     db_game = db.query(game_models.Game).filter(game_models.Game.id == game_id).first()
@@ -201,7 +189,7 @@ def next_pitch(game_id: str, db: Session = Depends(get_db)):
     return {"status": "ready_for_next_pitch"}
 
 
-@app.post("/api/game/{game_id}/toggle-pitching")
+@app.post("/game/{game_id}/toggle-pitching")
 def toggle_pitching(game_id: str, db: Session = Depends(get_db)):
     """攻守交代"""
     db_game = db.query(game_models.Game).filter(game_models.Game.id == game_id).first()
@@ -220,8 +208,7 @@ def toggle_pitching(game_id: str, db: Session = Depends(get_db)):
     }
 
 
-# 新規追加: ゲーム終了エンドポイント
-@app.post("/api/game/{game_id}/end")
+@app.post("/game/{game_id}/end")
 def end_game(game_id: str, db: Session = Depends(get_db)):
     """ゲーム終了（ログに記録）"""
     db_game = db.query(game_models.Game).filter(game_models.Game.id == game_id).first()
@@ -245,8 +232,8 @@ def end_game(game_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Failed to log game: {str(e)}")
 
 
-# 統計API（既存）
-@app.get("/api/stats/pitch-effectiveness")
+# 統計API
+@app.get("/stats/pitch-effectiveness")
 def get_pitch_effectiveness(db: Session = Depends(get_db)):
     """球種別効果統計"""
     results = db.query(
@@ -259,7 +246,7 @@ def get_pitch_effectiveness(db: Session = Depends(get_db)):
     return stats
 
 
-@app.get("/api/stats/game/{game_id}/history")
+@app.get("/stats/game/{game_id}/history")
 def get_game_history(game_id: str, db: Session = Depends(get_db)):
     """ゲーム履歴取得"""
     pitches = (
